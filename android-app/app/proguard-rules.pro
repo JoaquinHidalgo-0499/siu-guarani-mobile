@@ -12,3 +12,6 @@
 
 # Mantener modelos de datos consumidos por UI
 -keep class ar.edu.unju.fi.guarani.** { *; }
+
+# Ignorar dependencias de escritorio (AWT) presentes en JNA no utilizadas en Android
+-dontwarn java.awt.**

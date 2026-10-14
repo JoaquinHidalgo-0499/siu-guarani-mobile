@@ -2,17 +2,12 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("dev.gobley.cargo") version "0.2.0"
-    id("dev.gobley.uniffi") version "0.2.0"
-}
-
-cargo {
-    packageDirectory = layout.projectDirectory.dir("../../rust-core")
 }
 
 android {
     namespace = "ar.edu.unju.fi.guarani"
     compileSdk = 35
+    ndkVersion = "27.2.12479018"
 
     defaultConfig {
         applicationId = "ar.edu.unju.fi.guarani"
@@ -34,6 +29,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -48,6 +44,12 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs("src/main/jniLibs")
+        }
     }
 }
 

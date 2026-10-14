@@ -314,9 +314,9 @@ fun MateriasList(
     val scope = rememberCoroutineScope()
     var descargandoPdf by remember { mutableStateOf(false) }
 
-    val aprobadas = materias.count { it.estado == EstadoMateria.Aprobada }
-    val regulares = materias.count { it.estado == EstadoMateria.Regular }
-    val pendientes = materias.count { it.estado == EstadoMateria.Pendiente }
+    val aprobadas = materias.count { it.estado == EstadoMateria.APROBADA }
+    val regulares = materias.count { it.estado == EstadoMateria.REGULAR }
+    val pendientes = materias.count { it.estado == EstadoMateria.PENDIENTE }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Semáforo resumen
@@ -401,9 +401,9 @@ fun SemaforoChip(label: String, color: Color) {
 @Composable
 fun MateriaItem(materia: Materia) {
     val (estadoColor, estadoTexto) = when (materia.estado) {
-        EstadoMateria.Aprobada -> Color(0xFF2E7D32) to "Aprobada"
-        EstadoMateria.Regular -> Color(0xFFF57F17) to "Regular"
-        EstadoMateria.Pendiente -> Color(0xFF757575) to "Pendiente"
+        EstadoMateria.APROBADA -> Color(0xFF2E7D32) to "Aprobada"
+        EstadoMateria.REGULAR -> Color(0xFFF57F17) to "Regular"
+        EstadoMateria.PENDIENTE -> Color(0xFF757575) to "Pendiente"
     }
 
     Card(
@@ -439,10 +439,11 @@ fun MateriaItem(materia: Materia) {
                     fontSize = 12.sp
                 )
 
-                materia.dias_vencimiento?.let { dias ->
+                val dias = materia.diasVencimiento
+                if (dias != null) {
                     val (vencColor, vencTexto) = when {
-                        dias <= 0 -> Color(0xFFC62828) to "¡Regularidad Vencida!"
-                        dias <= 90 -> Color(0xFFE65100) to "Vence pronto: $dias días"
+                        dias <= 0L -> Color(0xFFC62828) to "¡Regularidad Vencida!"
+                        dias <= 90L -> Color(0xFFE65100) to "Vence pronto: $dias días"
                         else -> Color(0xFF00796B) to "Vigente: $dias días restantes"
                     }
                     Text(
