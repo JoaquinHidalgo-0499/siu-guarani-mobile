@@ -438,6 +438,21 @@ fun MateriaItem(materia: Materia) {
                     color = Color.Gray,
                     fontSize = 12.sp
                 )
+
+                materia.dias_vencimiento?.let { dias ->
+                    val (vencColor, vencTexto) = when {
+                        dias <= 0 -> Color(0xFFC62828) to "¡Regularidad Vencida!"
+                        dias <= 90 -> Color(0xFFE65100) to "Vence pronto: $dias días"
+                        else -> Color(0xFF00796B) to "Vigente: $dias días restantes"
+                    }
+                    Text(
+                        text = vencTexto,
+                        color = vencColor,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
             }
         }
     }
