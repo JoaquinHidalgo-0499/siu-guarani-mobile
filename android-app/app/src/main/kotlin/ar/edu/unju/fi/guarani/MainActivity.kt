@@ -2,7 +2,6 @@ package ar.edu.unju.fi.guarani
 
 import android.os.Bundle
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -18,21 +17,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import ar.edu.unju.fi.guarani.security.BiometricHelper
+import ar.edu.unju.fi.guarani.security.SecurityManager
 import ar.edu.unju.fi.guarani.ui.PlanEstudioViewModel
 import ar.edu.unju.fi.guarani.ui.PlanUiState
+import kotlinx.coroutines.launch
 import uniffi.guarani_core.EstadoMateria
 import uniffi.guarani_core.Materia
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     private lateinit var viewModel: PlanEstudioViewModel
+    private lateinit var securityManager: SecurityManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         viewModel = PlanEstudioViewModel(cacheDir = cacheDir)
+        securityManager = SecurityManager(this)
 
         setContent {
             MaterialTheme(
@@ -47,7 +53,40 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    GuaraniApp(viewModel = viewModel)
+                    GuaraniApp(
+                        viewModel = viewModel,
+                        securityManager = securityManager,
+                        onBiometricAuth = { onCredentialsUnlocked ->
+                            if (BiometricHelper.puedeAutenticarConBiometria(this@MainActivity)) {
+                                BiometricHelper.autenticar(
+                                    activity = this@MainActivity,
+                                    onSuccess = {
+                                        lifecycleScope.launch {
+                                            val creds = securityManager.obtenerCredenciales()
+                                            if (creds != null) {
+                                                onCredentialsUnlocked(creds.first, creds.second)
+                                            } else {
+                                                Toast.makeText(
+                                                    this@MainActivity,
+                                                    "No hay credenciales guardadas",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
+                                    },
+                                    onError = { err ->
+                                        Toast.makeText(this@MainActivity, err, Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            } else {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Biometría no disponible en este dispositivo",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -56,10 +95,23 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GuaraniApp(viewModel: PlanEstudioViewModel) {
+fun GuaraniApp(
+    viewModel: PlanEstudioViewModel,
+    securityManager: SecurityManager,
+    onBiometricAuth: (onSuccess: (String, String) -> Unit) -> Unit
+) {
     var dni by remember { mutableStateOf("") }
     var clave by remember { mutableStateOf("") }
+    var guardarCredencialesCheck by remember { mutableStateOf(true) }
+    var tieneCredencialesGuardadas by remember { mutableStateOf(false) }
+
+    val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        val creds = securityManager.obtenerCredenciales()
+        tieneCredencialesGuardadas = (creds != null)
+    }
 
     Scaffold(
         topBar = {
@@ -93,7 +145,7 @@ fun GuaraniApp(viewModel: PlanEstudioViewModel) {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Sincronización de Historial",
+                        text = "Acceso Seguro",
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 16.sp
                     )
@@ -117,10 +169,36 @@ fun GuaraniApp(viewModel: PlanEstudioViewModel) {
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Checkbox(
+                            checked = guardarCredencialesCheck,
+                            onCheckedChange = { guardarCredencialesCheck = it }
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Guardar credenciales con hardware Keystore",
+                            fontSize = 12.sp,
+                            color = Color.DarkGray
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Button(
-                        onClick = { viewModel.sincronizarConSiu(dni, clave) },
+                        onClick = {
+                            if (guardarCredencialesCheck) {
+                                scope.launch {
+                                    securityManager.guardarCredenciales(dni, clave)
+                                    tieneCredencialesGuardadas = true
+                                }
+                            }
+                            viewModel.sincronizarConSiu(dni, clave)
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp),
                         enabled = dni.isNotBlank() && clave.isNotBlank() && uiState !is PlanUiState.Loading
@@ -137,6 +215,23 @@ fun GuaraniApp(viewModel: PlanEstudioViewModel) {
                             Text("Sincronizar Plan de Estudios")
                         }
                     }
+
+                    if (tieneCredencialesGuardadas) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                onBiometricAuth { bioDni, bioClave ->
+                                    dni = bioDni
+                                    clave = bioClave
+                                    viewModel.sincronizarConSiu(bioDni, bioClave)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Desbloquear con Huella / PIN")
+                        }
+                    }
                 }
             }
 
@@ -150,7 +245,7 @@ fun GuaraniApp(viewModel: PlanEstudioViewModel) {
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Ingrese sus credenciales o cargue datos locales.",
+                            text = "Ingrese sus credenciales o use datos locales.",
                             color = Color.Gray
                         )
                     }
@@ -194,7 +289,6 @@ fun MateriasList(materias: List<Materia>) {
     val pendientes = materias.count { it.estado == EstadoMateria.Pendiente }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Semáforo resumen
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -254,7 +348,6 @@ fun MateriaItem(materia: Materia) {
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Indicador de color vertical
             Box(
                 modifier = Modifier
                     .width(4.dp)
