@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -24,6 +25,8 @@ import ar.edu.unju.fi.guarani.security.BiometricHelper
 import ar.edu.unju.fi.guarani.security.SecurityManager
 import ar.edu.unju.fi.guarani.ui.PlanEstudioViewModel
 import ar.edu.unju.fi.guarani.ui.PlanUiState
+import ar.edu.unju.fi.guarani.util.PdfDownloader
+import ar.edu.unju.fi.guarani.worker.GuaraniSyncWorker
 import kotlinx.coroutines.launch
 import uniffi.guarani_core.EstadoMateria
 import uniffi.guarani_core.Materia
@@ -39,6 +42,9 @@ class MainActivity : FragmentActivity() {
 
         viewModel = PlanEstudioViewModel(cacheDir = cacheDir)
         securityManager = SecurityManager(this)
+
+        // Programar sincronización periódica silenciosa en segundo plano
+        GuaraniSyncWorker.programarSincronizacionPeriodica(this)
 
         setContent {
             MaterialTheme(
@@ -181,7 +187,7 @@ fun GuaraniApp(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Guardar credenciales con hardware Keystore",
+                            text = "Guardar credenciales en Keystore",
                             fontSize = 12.sp,
                             color = Color.DarkGray
                         )
@@ -275,7 +281,24 @@ fun GuaraniApp(
                     }
                 }
                 is PlanUiState.Success -> {
-                    MateriasList(materias = state.materias)
+                    val context = LocalContext.current
+                    MateriasList(
+                        materias = state.materias,
+                        onDescargarCertificado = { endpoint, nombreArchivo ->
+                            scope.launch {
+                                val result = viewModel.descargarCertificado(endpoint)
+                                result.onSuccess { bytes ->
+                                    PdfDownloader.guardarYAbrirPdf(
+                                        context = context,
+                                        bytes = bytes,
+                                        nombreArchivo = nombreArchivo
+                                    )
+                                }.onFailure { error ->
+                                    Toast.makeText(context, "Error al descargar: ${error.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -283,12 +306,20 @@ fun GuaraniApp(
 }
 
 @Composable
-fun MateriasList(materias: List<Materia>) {
+fun MateriasList(
+    materias: List<Materia>,
+    onDescargarCertificado: (endpoint: String, nombreArchivo: String) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var descargandoPdf by remember { mutableStateOf(false) }
+
     val aprobadas = materias.count { it.estado == EstadoMateria.Aprobada }
     val regulares = materias.count { it.estado == EstadoMateria.Regular }
     val pendientes = materias.count { it.estado == EstadoMateria.Pendiente }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        // Semáforo resumen
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -298,6 +329,45 @@ fun MateriasList(materias: List<Materia>) {
             SemaforoChip(label = "Aprobadas: $aprobadas", color = Color(0xFF2E7D32))
             SemaforoChip(label = "Regulares: $regulares", color = Color(0xFFF57F17))
             SemaforoChip(label = "Pendientes: $pendientes", color = Color(0xFF616161))
+        }
+
+        // Acciones de Certificados
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Certificados Oficiales",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = Color(0xFF1B5E20)
+                )
+
+                OutlinedButton(
+                    onClick = {
+                        descargandoPdf = true
+                        onDescargarCertificado(
+                            "tramites/alumnos_regular/pdf",
+                            "Certificado_Alumno_Regular_UNJu.pdf"
+                        )
+                        descargandoPdf = false
+                    },
+                    enabled = !descargandoPdf,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Alumno Regular", fontSize = 12.sp)
+                }
+            }
         }
 
         LazyColumn(
