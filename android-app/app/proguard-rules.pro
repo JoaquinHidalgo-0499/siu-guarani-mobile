@@ -2,13 +2,17 @@
 
 # UniFFI y JNA: Conservar bindings y llamadas nativas
 -keep class uniffi.** { *; }
+-keepclassmembers class uniffi.** { *; }
 -keep class com.sun.jna.** { *; }
+-keepclassmembers class * implements com.sun.jna.** { *; }
+-keepclassmembers class * extends com.sun.jna.** { *; }
 -keepclassmembers class * {
     native <methods>;
 }
 
-# Google Tink
--keepclassmembers class * extends com.google.crypto.tink.** { *; }
+# Google Tink: Preservar clases y managers criptográficos
+-keep class com.google.crypto.tink.** { *; }
+-dontwarn com.google.crypto.tink.**
 
 # Mantener modelos de datos consumidos por UI
 -keep class ar.edu.unju.fi.guarani.** { *; }

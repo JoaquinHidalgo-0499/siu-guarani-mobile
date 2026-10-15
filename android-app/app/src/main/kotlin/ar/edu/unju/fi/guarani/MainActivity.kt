@@ -40,8 +40,8 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        viewModel = PlanEstudioViewModel(cacheDir = cacheDir)
         securityManager = SecurityManager(this)
+        viewModel = PlanEstudioViewModel(cacheDir = cacheDir, securityManager = securityManager)
 
         // Programar sincronización periódica silenciosa en segundo plano
         GuaraniSyncWorker.programarSincronizacionPeriodica(this)
@@ -197,13 +197,11 @@ fun GuaraniApp(
 
                     Button(
                         onClick = {
-                            if (guardarCredencialesCheck) {
-                                scope.launch {
-                                    securityManager.guardarCredenciales(dni, clave)
-                                    tieneCredencialesGuardadas = true
-                                }
-                            }
-                            viewModel.sincronizarConSiu(dni, clave)
+                            viewModel.sincronizarConSiu(
+                                dni = dni,
+                                clave = clave,
+                                guardarEnKeystore = guardarCredencialesCheck
+                            )
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp),
@@ -229,7 +227,7 @@ fun GuaraniApp(
                                 onBiometricAuth { bioDni, bioClave ->
                                     dni = bioDni
                                     clave = bioClave
-                                    viewModel.sincronizarConSiu(bioDni, bioClave)
+                                    viewModel.sincronizarConSiu(bioDni, bioClave, guardarEnKeystore = false)
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
