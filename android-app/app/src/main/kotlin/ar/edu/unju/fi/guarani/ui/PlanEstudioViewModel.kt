@@ -16,7 +16,11 @@ import uniffi.guarani_core.Materia
 sealed interface PlanUiState {
     data object Idle : PlanUiState
     data object Loading : PlanUiState
-    data class Success(val materias: List<Materia>) : PlanUiState
+    data class Success(
+        val materias: List<Materia>,
+        val esOffline: Boolean = false,
+        val dniAlumno: String = ""
+    ) : PlanUiState
     data class Error(val mensaje: String) : PlanUiState
 }
 
@@ -32,19 +36,31 @@ class PlanEstudioViewModel(
     private val _uiState = MutableStateFlow<PlanUiState>(PlanUiState.Idle)
     val uiState: StateFlow<PlanUiState> = _uiState.asStateFlow()
 
-    init {
-        cargarDesdeCache()
+    fun tieneDatosEnCache(): Boolean {
+        return try {
+            val f = File(dbPath)
+            f.exists() && f.length() > 0
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     fun cargarDesdeCache() {
         viewModelScope.launch(Dispatchers.IO) {
+            _uiState.value = PlanUiState.Loading
             try {
                 val cached = client.obtenerDeCache(dbPath)
                 if (cached.isNotEmpty()) {
-                    _uiState.value = PlanUiState.Success(cached)
+                    _uiState.value = PlanUiState.Success(
+                        materias = cached,
+                        esOffline = true,
+                        dniAlumno = "Modo Offline"
+                    )
+                } else {
+                    _uiState.value = PlanUiState.Error("No hay materias almacenadas localmente. Inicie sesión para sincronizar.")
                 }
-            } catch (_: Throwable) {
-                // Si la BD no existe aún, se mantiene en estado Idle
+            } catch (t: Throwable) {
+                _uiState.value = PlanUiState.Error("No se pudo leer la base de datos local: ${t.localizedMessage ?: t.message}")
             }
         }
     }
@@ -59,19 +75,34 @@ class PlanEstudioViewModel(
                         securityManager?.guardarCredenciales(dni, clave)
                     }
                     val lista = client.obtenerPlanEstudios()
-                    client.guardarEnCache(dbPath, lista)
-                    _uiState.value = PlanUiState.Success(lista)
+                    if (lista.isNotEmpty()) {
+                        client.guardarEnCache(dbPath, lista)
+                    }
+                    _uiState.value = PlanUiState.Success(
+                        materias = lista,
+                        esOffline = false,
+                        dniAlumno = dni
+                    )
                 } else {
-                    _uiState.value = PlanUiState.Error("No se pudo iniciar sesión en SIU Guaraní.")
+                    _uiState.value = PlanUiState.Error("Credenciales rechazadas por SIU Guaraní. Verifique su DNI y contraseña.")
                 }
             } catch (e: GuaraniException.CredencialesInvalidas) {
-                _uiState.value = PlanUiState.Error("DNI o contraseña incorrectos en SIU Guaraní.")
+                _uiState.value = PlanUiState.Error("DNI o contraseña incorrectos en SIU Guaraní UNJu.")
             } catch (e: GuaraniException.RedException) {
-                _uiState.value = PlanUiState.Error("Error de conexión con el portal de la UNJu. Mostrando datos offline.")
-                cargarDesdeCache()
+                _uiState.value = PlanUiState.Error("Error de conexión con el portal de la UNJu. Verifique su conexión a Internet.")
             } catch (t: Throwable) {
-                _uiState.value = PlanUiState.Error("Error al procesar: ${t.localizedMessage ?: t.message}")
+                _uiState.value = PlanUiState.Error("Error al sincronizar: ${t.localizedMessage ?: t.message}")
             }
+        }
+    }
+
+    fun cerrarSesion() {
+        _uiState.value = PlanUiState.Idle
+    }
+
+    fun limpiarError() {
+        if (_uiState.value is PlanUiState.Error) {
+            _uiState.value = PlanUiState.Idle
         }
     }
 
